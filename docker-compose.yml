@@ -1,0 +1,100 @@
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: postgres-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 123
+      POSTGRES_DB: 123
+    ports:
+      - "5432:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama-service
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    command: >
+      sh -c "
+        ollama serve &
+        sleep 5 &&
+        ollama pull llama3:latest &&
+        wait
+      "
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  ai-assistant:
+    build:
+      context: ./work_backend
+      dockerfile: Dockerfile
+    container_name: ai-assistant
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    environment:
+      # DB
+      DATABASE_URL: postgresql://postgres:123456789@db:5432/taskdb
+      # OLLAMA
+      OLLAMA_HOST: http://ollama:11434
+      OLLAMA_MODEL: llama3:latest
+      # APP
+      ENV: development
+    volumes:
+      - ./work_backend:/app
+      - ./work_backend/models:/app/models  # Lưu model AI
+    command: >
+      sh -c "
+        python -c 'import time; print(\"Waiting for DB...\"); time.sleep(5)' &&
+        uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+      "
+  backend:
+    build:
+      context: ./work_backend
+      dockerfile: Dockerfile
+    container_name: backend
+    ports:
+      - "5000:5000"
+    depends_on:
+      - db
+      - ai_service
+    environment:
+      NODE_ENV: development
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USERNAME: postgres
+      DB_PASSWORD: 123
+      DB_NAME: 123
+      OLLAMA_HOST: http://ai_service:11434
+    volumes:
+      - ./work_backend:/app
+      - /app/node_modules
+
+  frontend:
+    build:
+      context: ./work_frontend/client
+      dockerfile: Dockerfile
+    container_name: frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    volumes:
+      - ./work_frontend/client:/app
+      - /app/node_modules
+
+# KHAI BÁO VOLUME Ở ĐÂY
+volumes:
+  db-data:
+  ollama-data:
