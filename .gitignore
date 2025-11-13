@@ -1,0 +1,18 @@
+# Ignore local root node setup
+/package.json
+/package-lock.json
+/node_modules/
+
+# Ignore OS files
+.DS_Store
+Thumbs.db
+
+docker-compose.yml
+dist/
+.env
+
+work_backend/.env
+work_backend/.idea
+work_backend/node_modules
+
+work_frontend/.env.local

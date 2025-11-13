@@ -1,0 +1,1617 @@
+openapi: 3.0.0
+info:
+  title: Task Management API
+  version: 1.0.0
+  description: |
+    Hệ thống quản lý công việc toàn diện với RBAC, AI, Chat, Báo cáo, Task, Project.
+    - JWT Authentication
+    - Phân quyền chi tiết
+    - AI gợi ý phân công & dự đoán rủi ro
+    - Chat nhóm + file
+    - Báo cáo nhân viên & quản lý
+  contact:
+    name: API Support
+    email: support@taskmanagement.com
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:3000/api
+    description: Local Development
+  - url: https://api.taskmanagement.com/api
+    description: Production Server
+
+tags:
+  - name: Auth
+    description: Đăng nhập, đăng ký, quản lý tài khoản
+  - name: Users
+    description: Thông tin người dùng (Admin)
+  - name: Accounts
+    description: Tài khoản đăng nhập (Admin)
+  - name: Projects
+    description: Dự án & phân đoạn
+  - name: Tasks
+    description: Nhiệm vụ, tiến độ, file
+  - name: Departments
+    description: Phòng ban
+  - name: Chat
+    description: Phòng chat & tin nhắn
+  - name: AI
+    description: AI hỗ trợ
+  - name: Notifications
+    description: Thông báo
+  - name: Reports
+    description: Báo cáo
+  - name: RBAC
+    description: Phân quyền
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        message: { type: string }
+        error: { type: string }
+        statusCode: { type: integer }
+      example:
+        message: "Invalid credentials"
+        error: "Unauthorized"
+        statusCode: 401
+
+    SuccessResponse:
+      type: object
+      properties:
+        message: { type: string }
+        data: { type: object }
+      example:
+        message: "Success"
+        data: {}
+
+    Pagination:
+      type: object
+      properties:
+        page: { type: integer, example: 1 }
+        limit: { type: integer, example: 10 }
+        total: { type: integer, example: 50 }
+        totalPages: { type: integer, example: 5 }
+
+    # AUTH DTOs
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email, example: "user@example.com" }
+        password: { type: string, format: password, example: "secret123" }
+
+    LoginResponse:
+      type: object
+      properties:
+        access_token: { type: string }
+        refresh_token: { type: string }
+        user: { $ref: '#/components/schemas/UserProfile' }
+
+    RegisterRequest:
+      type: object
+      required: [email, password, first_name, last_name]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 6 }
+        first_name: { type: string }
+        last_name: { type: string }
+
+    ChangePasswordRequest:
+      type: object
+      required: [old_password, new_password]
+      properties:
+        old_password: { type: string }
+        new_password: { type: string, minLength: 6 }
+
+    # USER DTOs
+    UserProfile:
+      type: object
+      properties:
+        id: { type: integer }
+        email: { type: string }
+        first_name: { type: string }
+        last_name: { type: string }
+        phone: { type: string }
+        position: { type: string }
+        department: { type: string }
+        role: { type: string, enum: [admin, manager, staff] }
+
+    CreateUserRequest:
+      type: object
+      required: [first_name, last_name, email]
+      properties:
+        first_name: { type: string }
+        last_name: { type: string }
+        email: { type: string, format: email }
+        phone: { type: string }
+        position: { type: string }
+        department_id: { type: integer }
+
+    UpdateUserRequest:
+      type: object
+      properties:
+        first_name: { type: string }
+        last_name: { type: string }
+        phone: { type: string }
+        position: { type: string }
+        department_id: { type: integer }
+
+    # ACCOUNT DTOs
+    CreateAccountRequest:
+      type: object
+      required: [user_id, email]
+      properties:
+        user_id: { type: integer }
+        email: { type: string, format: email }
+        password_hash: { type: string }
+
+    UpdateAccountRequest:
+      type: object
+      properties:
+        email: { type: string, format: email }
+        status: { type: string, enum: [active, inactive] }
+
+    # PROJECT DTOs
+    Project:
+      type: object
+      properties:
+        id: { type: integer }
+        project_name: { type: string }
+        status: { type: string, enum: [Active, Completed, On Hold] }
+        created_at: { type: string, format: date-time }
+
+    CreateProjectRequest:
+      type: object
+      required: [project_name]
+      properties:
+        project_name: { type: string, example: "Website Redesign" }
+
+    UpdateProjectRequest:
+      type: object
+      properties:
+        project_name: { type: string }
+        status: { type: string, enum: [Active, Completed, On Hold] }
+
+    ProjectPart:
+      type: object
+      properties:
+        id: { type: integer }
+        project_id: { type: integer }
+        part_name: { type: string }
+
+    CreateProjectPartRequest:
+      type: object
+      required: [project_id, part_name]
+      properties:
+        project_id: { type: integer }
+        part_name: { type: string }
+
+    # TASK DTOs
+    Task:
+      type: object
+      properties:
+        id: { type: integer }
+        title: { type: string }
+        status: { type: string, enum: [Todo, In Progress, Done, Blocked] }
+        progress_percentage: { type: integer, minimum: 0, maximum: 100 }
+        main_assignee: { $ref: '#/components/schemas/UserProfile' }
+        assigned_users: { type: array, items: { $ref: '#/components/schemas/UserProfile' } }
+
+    CreateTaskRequest:
+      type: object
+      required: [title, assigned_users]
+      properties:
+        title: { type: string }
+        assigned_users: { type: array, items: { type: integer } }
+        project_part_id: { type: integer }
+
+    UpdateTaskRequest:
+      type: object
+      properties:
+        title: { type: string }
+        status: { type: string }
+
+    UpdateProgressRequest:
+      type: object
+      required: [progress_percentage]
+      properties:
+        progress_percentage: { type: integer, minimum: 0, maximum: 100 }
+
+    ChangeMainAssigneeRequest:
+      type: object
+      required: [user_id]
+      properties:
+        user_id: { type: integer }
+
+    UpdateAssignmentsRequest:
+      type: object
+      required: [assigned_users]
+      properties:
+        assigned_users: { type: array, items: { type: integer } }
+
+    # DEPARTMENT DTOs
+    Department:
+      type: object
+      properties:
+        id: { type: integer }
+        department_name: { type: string }
+        description: { type: string }
+        manager: { $ref: '#/components/schemas/UserProfile' }
+        status: { type: string, enum: [Active, Inactive] }
+
+    CreateDepartmentRequest:
+      type: object
+      required: [department_name]
+      properties:
+        department_name: { type: string }
+        description: { type: string }
+        manager_id: { type: integer }
+
+    UpdateDepartmentRequest:
+      type: object
+      properties:
+        department_name: { type: string }
+        description: { type: string }
+        manager_id: { type: integer }
+        status: { type: string, enum: [Active, Inactive] }
+
+    # CHAT DTOs
+    Chatroom:
+      type: object
+      properties:
+        id: { type: integer }
+        chatroom_name: { type: string }
+        chatroom_type: { type: string, enum: [Private, Group] }
+        members: { type: array, items: { $ref: '#/components/schemas/UserProfile' } }
+
+    CreateChatroomRequest:
+      type: object
+      required: [chatroom_name, chatroom_type, member_ids]
+      properties:
+        chatroom_name: { type: string }
+        chatroom_type: { type: string, enum: [Private, Group] }
+        member_ids: { type: array, items: { type: integer } }
+
+    Message:
+      type: object
+      properties:
+        id: { type: integer }
+        message_text: { type: string }
+        sender: { $ref: '#/components/schemas/UserProfile' }
+        attachments: { type: array, items: { type: string } }
+        sent_at: { type: string, format: date-time }
+
+    SendMessageRequest:
+      type: object
+      properties:
+        message_text: { type: string }
+        files: { type: array, items: { type: string, format: binary } }
+
+    # AI DTOs
+    AssignmentSuggestion:
+      type: object
+      properties:
+        user_id: { type: integer }
+        score: { type: number, format: float }
+        reason: { type: string }
+
+    RiskPrediction:
+      type: object
+      properties:
+        risk_level: { type: string, enum: [Low, Medium, High, Critical] }
+        probability: { type: number, format: float }
+        factors: { type: array, items: { type: string } }
+
+    # REPORT DTOs
+    EmployeeReportTask:
+      type: object
+      properties:
+        task_id: { type: integer }
+        progress_percentage: { type: integer }
+        actual_output: { type: string }
+        status_at_report: { type: string }
+
+    CreateEmployeeReportRequest:
+      type: object
+      required: [title, summary]
+      properties:
+        title: { type: string }
+        summary: { type: string }
+        issues_and_proposals: { type: string }
+        next_plan_or_resources: { type: string }
+        tasks: { type: array, items: { $ref: '#/components/schemas/EmployeeReportTask' } }
+
+    CreateManagerReportRequest:
+      type: object
+      required: [title, summary]
+      properties:
+        title: { type: string }
+        summary: { type: string }
+        issues_and_proposals: { type: string }
+        next_plan_or_resources: { type: string }
+
+    ManagerReviewRequest:
+      type: object
+      required: [review_result]
+      properties:
+        review_result: { type: string, enum: [approved, rejected, needs_revision] }
+        comment: { type: string }
+        performance_rating: { type: string, enum: ["Đạt", "Không đạt", "Muộn tiến độ"] }
+
+    AdminReviewRequest:
+      type: object
+      required: [admin_review_result]
+      properties:
+        admin_review_result: { type: string, enum: [approved, rejected] }
+        admin_comment: { type: string }
+        strategic_value_rating: { type: string, enum: ["Cao", "Trung bình", "Thấp"] }
+
+    # RBAC DTOs
+    Permission:
+      type: object
+      properties:
+        id: { type: integer }
+        permission_name: { type: string }
+        category: { type: string }
+        description: { type: string }
+
+    Role:
+      type: object
+      properties:
+        id: { type: integer }
+        role_name: { type: string, enum: [admin, manager, staff] }
+        description: { type: string }
+
+    CreatePermissionRequest:
+      type: object
+      required: [permission_name]
+      properties:
+        permission_name: { type: string }
+        category: { type: string }
+        description: { type: string }
+
+    CreateRoleRequest:
+      type: object
+      required: [role_name]
+      properties:
+        role_name: { type: string, enum: [admin, manager, staff] }
+        description: { type: string }
+
+    AssignPermissionRequest:
+      type: object
+      required: [role_id, permission_id]
+      properties:
+        role_id: { type: integer }
+        permission_id: { type: integer }
+
+    AssignRoleRequest:
+      type: object
+      required: [account_id, role_id]
+      properties:
+        account_id: { type: integer }
+        role_id: { type: integer }
+
+  parameters:
+    IdParam:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer }
+    TaskIdParam:
+      name: taskId
+      in: path
+      required: true
+      schema: { type: integer }
+    ReportIdParam:
+      name: reportId
+      in: path
+      required: true
+      schema: { type: integer }
+    DepartmentIdParam:
+      name: departmentId
+      in: path
+      required: true
+      schema: { type: integer }
+    ChatroomIdParam:
+      name: chatroomId
+      in: path
+      required: true
+      schema: { type: integer }
+    UserIdParam:
+      name: userId
+      in: path
+      required: true
+      schema: { type: integer }
+    RoleIdParam:
+      name: role_id
+      in: path
+      required: true
+      schema: { type: integer }
+    PermissionIdParam:
+      name: permission_id
+      in: path
+      required: true
+      schema: { type: integer }
+
+security:
+  - BearerAuth: []
+
+paths:
+  # =====================================
+  # AUTH
+  # =====================================
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Đăng nhập
+      requestBody:
+        $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Đăng nhập thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Đăng ký (Admin)
+      requestBody:
+        $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: Tạo user thành công
+
+  /auth/forgot-password:
+    post:
+      tags: [Auth]
+      summary: Quên mật khẩu
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string, format: email }
+              required: [email]
+      responses:
+        '200':
+          description: Gửi link reset
+
+  /auth/refresh-token:
+    post:
+      tags: [Auth]
+      summary: Làm mới token
+      security: []
+      responses:
+        '200':
+          description: Token mới
+
+  /auth/change-password:
+    post:
+      tags: [Auth]
+      summary: Đổi mật khẩu
+      requestBody:
+        $ref: '#/components/schemas/ChangePasswordRequest'
+      responses:
+        '200':
+          description: Đổi thành công
+
+  /auth/profile:
+    get:
+      tags: [Auth]
+      summary: Thông tin cá nhân
+      responses:
+        '200':
+          description: Profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Đăng xuất
+      responses:
+        '200':
+          description: Đã đăng xuất
+
+  # =====================================
+  # USERS
+  # =====================================
+  /auth/users:
+    post:
+      tags: [Users]
+      summary: Tạo người dùng (Admin)
+      requestBody:
+        $ref: '#/components/schemas/CreateUserRequest'
+      responses:
+        '201':
+          description: Tạo thành công
+
+    get:
+      tags: [Users]
+      summary: Danh sách người dùng
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 10 }
+      responses:
+        '200':
+          description: Danh sách
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/UserProfile' } }
+                  pagination: { $ref: '#/components/schemas/Pagination' }
+
+  /auth/users/{id}:
+    get:
+      tags: [Users]
+      summary: Chi tiết người dùng
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Thông tin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+
+    put:
+      tags: [Users]
+      summary: Cập nhật
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        $ref: '#/components/schemas/UpdateUserRequest'
+      responses:
+        '200':
+          description: Cập nhật thành công
+
+    delete:
+      tags: [Users]
+      summary: Xóa người dùng
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Xóa thành công
+
+  # =====================================
+  # ACCOUNTS
+  # =====================================
+  /auth/accounts:
+    post:
+      tags: [Accounts]
+      summary: Tạo tài khoản
+      requestBody:
+        $ref: '#/components/schemas/CreateAccountRequest'
+      responses:
+        '201':
+          description: Tạo thành công
+
+    get:
+      tags: [Accounts]
+      summary: Danh sách tài khoản
+      responses:
+        '200':
+          description: Danh sách
+
+  /auth/accounts/{id}:
+    get:
+      tags: [Accounts]
+      summary: Chi tiết tài khoản
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Thông tin
+
+    put:
+      tags: [Accounts]
+      summary: Cập nhật tài khoản
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        $ref: '#/components/schemas/UpdateAccountRequest'
+      responses:
+        '200':
+          description: Cập nhật thành công
+
+    delete:
+      tags: [Accounts]
+      summary: Xóa tài khoản
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Xóa thành công
+
+  # =====================================
+  # PROJECTS
+  # =====================================
+  /projects:
+    post:
+      tags: [Projects]
+      summary: Tạo dự án
+      requestBody:
+        $ref: '#/components/schemas/CreateProjectRequest'
+      responses:
+        '201':
+          description: Tạo thành công
+
+    get:
+      tags: [Projects]
+      summary: Danh sách dự án
+      responses:
+        '200':
+          description: Danh sách
+
+  /projects/{id}:
+    get:
+      tags: [Projects]
+      summary: Chi tiết dự án
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Thông tin
+
+    put:
+      tags: [Projects]
+      summary: Cập nhật dự án
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        $ref: '#/components/schemas/UpdateProjectRequest'
+      responses:
+        '200':
+          description: Cập nhật thành công
+
+    delete:
+      tags: [Projects]
+      summary: Xóa dự án
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Xóa thành công
+
+  /projects/parts:
+    post:
+      tags: [Projects]
+      summary: Tạo phân đoạn
+      requestBody:
+        $ref: '#/components/schemas/CreateProjectPartRequest'
+      responses:
+        '201':
+          description: Tạo thành công
+
+  /projects/{projectId}/parts:
+    get:
+      tags: [Projects]
+      summary: Danh sách phân đoạn
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Danh sách
+
+  /projects/parts/my:
+    get:
+      tags: [Projects]
+      summary: Phân đoạn của tôi
+      responses:
+        '200':
+          description: Danh sách
+
+  /projects/parts/{id}:
+    put:
+      tags: [Projects]
+      summary: Cập nhật phân đoạn
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                part_name: { type: string }
+      responses:
+        '200':
+          description: Cập nhật thành công
+
+    delete:
+      tags: [Projects]
+      summary: Xóa phân đoạn
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Xóa thành công
+
+  # =====================================
+  # TASKS
+  # =====================================
+  /tasks:
+    post:
+      tags: [Tasks]
+      summary: Tạo nhiệm vụ
+      requestBody:
+        $ref: '#/components/schemas/CreateTaskRequest'
+      responses:
+        '201':
+          description: Tạo thành công
+
+  /tasks/my:
+    get:
+      tags: [Tasks]
+      summary: Nhiệm vụ của tôi
+      responses:
+        '200':
+          description: Danh sách
+
+  /tasks/{id}:
+    get:
+      tags: [Tasks]
+      summary: Chi tiết nhiệm vụ
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Thông tin
+
+    put:
+      tags: [Tasks]
+      summary: Cập nhật nhiệm vụ
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        $ref: '#/components/schemas/UpdateTaskRequest'
+      responses:
+        '200':
+          description: Cập nhật thành công
+
+    delete:
+      tags: [Tasks]
+      summary: Xóa nhiệm vụ
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Xóa thành công
+
+  /tasks/{id}/progress:
+    post:
+      tags: [Tasks]
+      summary: Cập nhật tiến độ
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        $ref: '#/components/schemas/UpdateProgressRequest'
+      responses:
+        '200':
+          description: Cập nhật thành công
+
+  /tasks/{id}/attachments:
+    post:
+      tags: [Tasks]
+      summary: Tải file
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                files: { type: array, items: { type: string, format: binary } }
+      responses:
+        '200':
+          description: Tải lên thành công
+
+  /tasks/{id}/main-assignee:
+    put:
+      tags: [Tasks]
+      summary: Đổi người phụ trách chính
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        $ref: '#/components/schemas/ChangeMainAssigneeRequest'
+      responses:
+        '200':
+          description: Cập nhật thành công
+
+  /tasks/{id}/assignments:
+    put:
+      tags: [Tasks]
+      summary: Cập nhật phân công
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        $ref: '#/components/schemas/UpdateAssignmentsRequest'
+      responses:
+        '200':
+          description: Cập nhật thành công
+
+  /tasks/{id}/history:
+    get:
+      tags: [Tasks]
+      summary: Lịch sử nhiệm vụ
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Lịch sử
+
+  # =====================================
+  # DEPARTMENTS
+  # =====================================
+  /departments:
+    get:
+      tags: [Departments]
+      summary: Danh sách phòng ban
+      responses:
+        '200':
+          description: Danh sách
+
+    post:
+      tags: [Departments]
+      summary: Tạo phòng ban
+      requestBody:
+        $ref: '#/components/schemas/CreateDepartmentRequest'
+      responses:
+        '201':
+          description: Tạo thành công
+
+  /departments/{id}:
+    get:
+      tags: [Departments]
+      summary: Chi tiết phòng ban
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Thông tin
+
+    put:
+      tags: [Departments]
+      summary: Cập nhật phòng ban
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        $ref: '#/components/schemas/UpdateDepartmentRequest'
+      responses:
+        '200':
+          description: Cập nhật thành công
+
+    delete:
+      tags: [Departments]
+      summary: Xóa phòng ban (soft delete)
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Xóa thành công
+
+  # =====================================
+  # CHAT
+  # =====================================
+  /chat:
+    post:
+      tags: [Chat]
+      summary: Tạo phòng chat
+      requestBody:
+        $ref: '#/components/schemas/CreateChatroomRequest'
+      responses:
+        '201':
+          description: Tạo thành công
+
+    get:
+      tags: [Chat]
+      summary: Phòng chat của tôi
+      responses:
+        '200':
+          description: Danh sách
+
+  /chat/{id}:
+    get:
+      tags: [Chat]
+      summary: Chi tiết phòng chat
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Thông tin
+
+  /chat/{chatroomId}/messages:
+    get:
+      tags: [Chat]
+      summary: Tin nhắn
+      parameters:
+        - $ref: '#/components/parameters/ChatroomIdParam'
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+      responses:
+        '200':
+          description: Danh sách tin nhắn
+
+  /chat/{id}/messages:
+    post:
+      tags: [Chat]
+      summary: Gửi tin nhắn
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        $ref: '#/components/schemas/SendMessageRequest'
+      responses:
+        '200':
+          description: Gửi thành công
+
+  /chat/{id}/members:
+    post:
+      tags: [Chat]
+      summary: Thêm thành viên
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                user_ids: { type: array, items: { type: integer } }
+      responses:
+        '200':
+          description: Thêm thành công
+
+    get:
+      tags: [Chat]
+      summary: Danh sách thành viên
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Danh sách
+
+  /chat/{id}/members/{userId}:
+    delete:
+      tags: [Chat]
+      summary: Xóa thành viên
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+        - $ref: '#/components/parameters/UserIdParam'
+      responses:
+        '200':
+          description: Xóa thành công
+
+  # =====================================
+  # AI
+  # =====================================
+  /ai/chatbot:
+    post:
+      tags: [AI]
+      summary: Chat với AI
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                message: { type: string }
+      responses:
+        '200':
+          description: Phản hồi AI
+
+  /ai/suggest-assignment/{taskId}:
+    post:
+      tags: [AI]
+      summary: Gợi ý phân công
+      parameters:
+        - $ref: '#/components/parameters/TaskIdParam'
+      responses:
+        '200':
+          description: Gợi ý
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AssignmentSuggestion'
+
+  /ai/predict-risk/{taskId}:
+    get:
+      tags: [AI]
+      summary: Dự đoán rủi ro
+      parameters:
+        - $ref: '#/components/parameters/TaskIdParam'
+      responses:
+        '200':
+          description: Dự đoán
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RiskPrediction'
+
+  /ai/department-risks/{departmentId}:
+    get:
+      tags: [AI]
+      summary: Phân tích rủi ro phòng ban
+      parameters:
+        - $ref: '#/components/parameters/DepartmentIdParam'
+      responses:
+        '200':
+          description: Phân tích
+
+  # =====================================
+  # NOTIFICATIONS
+  # =====================================
+  /notifications:
+    get:
+      tags: [Notifications]
+      summary: Danh sách thông báo
+      responses:
+        '200':
+          description: Danh sách
+
+  /notifications/{notificationId}/read:
+    put:
+      tags: [Notifications]
+      summary: Đánh dấu đã đọc
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Đã đọc
+
+  /notifications/read-all:
+    put:
+      tags: [Notifications]
+      summary: Đánh dấu tất cả đã đọc
+      responses:
+        '200':
+          description: Đã đọc tất cả
+
+  # =====================================
+  # REPORTS
+  # =====================================
+  /reports:
+    get:
+      tags: [Reports]
+      summary: Danh sách báo cáo
+      responses:
+        '200':
+          description: Danh sách
+
+  /reports/employee:
+    post:
+      tags: [Reports]
+      summary: Nộp báo cáo nhân viên
+      requestBody:
+        $ref: '#/components/schemas/CreateEmployeeReportRequest'
+      responses:
+        '201':
+          description: Nộp thành công
+
+  /reports/manager:
+    post:
+      tags: [Reports]
+      summary: Nộp báo cáo quản lý
+      requestBody:
+        $ref: '#/components/schemas/CreateManagerReportRequest'
+      responses:
+        '201':
+          description: Nộp thành công
+
+  /reports/{reportId}/review/manager:
+    post:
+      tags: [Reports]
+      summary: Duyệt báo cáo nhân viên
+      parameters:
+        - $ref: '#/components/parameters/ReportIdParam'
+      requestBody:
+        $ref: '#/components/schemas/ManagerReviewRequest'
+      responses:
+        '200':
+          description: Duyệt thành công
+
+  /reports/{reportId}/review/admin:
+    post:
+      tags: [Reports]
+      summary: Duyệt báo cáo quản lý
+      parameters:
+        - $ref: '#/components/parameters/ReportIdParam'
+      requestBody:
+        $ref: '#/components/schemas/AdminReviewRequest'
+      responses:
+        '200':
+          description: Duyệt thành công
+  # =====================================
+  # RBAC
+  # =====================================
+  /rbac/permissions:
+    post:
+      tags: [RBAC]
+      summary: Tạo quyền mới
+      description: Chỉ admin mới có thể tạo quyền
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePermissionRequest'
+            example:
+              permission_name: "task.delete"
+              category: "Task Management"
+              description: "Cho phép xóa nhiệm vụ"
+      responses:
+        '201':
+          description: Quyền đã được tạo thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Permission'
+        '400':
+          $ref: '#/components/schemas/ErrorResponse'
+
+    get:
+      tags: [RBAC]
+      summary: Lấy danh sách tất cả quyền
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20 }
+        - name: category
+          in: query
+          schema: { type: string }
+          description: Lọc theo danh mục quyền
+      responses:
+        '200':
+          description: Danh sách quyền
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Permission'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+
+  /rbac/roles:
+    post:
+      tags: [ RBAC ]
+      summary: Tạo vai trò mới
+      description: Chỉ admin mới có thể tạo vai trò
+      security:
+        - BearerAuth: [ ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRoleRequest'
+            example:
+              role_name: "manager"
+              description: "Quản lý phòng ban"
+      responses:
+        '201':
+          description: Vai trò đã được tạo thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Role'
+        '400':
+          $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          $ref: '#/components/schemas/ErrorResponse'
+
+    get:
+      tags: [ RBAC ]
+      summary: Lấy danh sách tất cả vai trò
+      description: Hỗ trợ phân trang và lọc theo tên vai trò
+      security:
+        - BearerAuth: [ ]
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, default: 1, minimum: 1 }
+          description: Trang hiện tại
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20, minimum: 1, maximum: 100 }
+          description: Số bản ghi mỗi trang
+        - name: role_name
+          in: query
+          schema: { type: string }
+          description: Lọc theo tên vai trò (partial match)
+      responses:
+        '200':
+          description: Danh sách vai trò
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Role'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+        '401':
+          $ref: '#/components/schemas/ErrorResponse'
+
+  /rbac/roles/permissions:
+    post:
+      tags: [RBAC]
+      summary: Gán quyền cho vai trò
+      description: Gán một quyền vào một vai trò
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignPermissionRequest'
+            example:
+              role_id: 2
+              permission_id: 5
+      responses:
+        '200':
+          description: Gán quyền thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+                example:
+                  message: "Permission assigned to role successfully"
+
+  /rbac/roles/{role_id}/permissions/{permission_id}:
+    delete:
+      tags: [RBAC]
+      summary: Xóa quyền khỏi vai trò
+      parameters:
+        - $ref: '#/components/parameters/RoleIdParam'
+        - $ref: '#/components/parameters/PermissionIdParam'
+      responses:
+        '200':
+          description: Xóa thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+
+  /rbac/roles/{role_id}/permissions:
+    get:
+      tags: [RBAC]
+      summary: Lấy danh sách quyền của một vai trò
+      parameters:
+        - $ref: '#/components/parameters/RoleIdParam'
+      responses:
+        '200':
+          description: Danh sách quyền
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Permission'
+
+  /rbac/accounts/roles:
+    post:
+      tags: [RBAC]
+      summary: Gán vai trò cho tài khoản
+      description: Gán một vai trò vào một tài khoản người dùng
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignRoleRequest'
+            example:
+              account_id: 3
+              role_id: 2
+      responses:
+        '200':
+          description: Gán vai trò thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+
+  /rbac/accounts/{account_id}/roles/{role_id}:
+    delete:
+      tags: [RBAC]
+      summary: Xóa vai trò khỏi tài khoản
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          schema: { type: integer }
+          description: ID của tài khoản
+        - $ref: '#/components/parameters/RoleIdParam'
+      responses:
+        '200':
+          description: Xóa thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+
+  /rbac/accounts/{account_id}/roles:
+    get:
+      tags: [RBAC]
+      summary: Lấy danh sách vai trò của tài khoản
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          schema: { type: integer }
+          description: ID của tài khoản
+      responses:
+        '200':
+          description: Danh sách vai trò
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Role'
+
+  # =====================================
+  # HEALTH CHECK (đã có trong app.ts)
+  # =====================================
+  /health:
+    get:
+      tags: [System]
+      summary: Kiểm tra trạng thái server
+      security: []
+      responses:
+        '200':
+          description: Server hoạt động bình thường
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ok"
+                  timestamp:
+                    type: string
+                    format: date-time
+                example:
+                  status: "ok"
+                  timestamp: "2025-10-30T10:00:00.000Z"
+
+  # =====================================
+  # STATIC FILES (Uploads)
+  # =====================================
+  /uploads/{filename}:
+    get:
+      tags: [Files]
+      summary: Truy cập file đã upload
+      description: |
+        Trả về file từ thư mục `uploads/`.  
+        Hỗ trợ hình ảnh, PDF, tài liệu, v.v.  
+        Có thể dùng trong `<img src>`, `<a href>`, hoặc API tải về.
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Tên file đầy đủ (bao gồm phần mở rộng), ví dụ `avatar-123.png`
+          example: "report-week1.pdf"
+      responses:
+        '200':
+          description: File được trả về thành công
+          content:
+            image/*:
+              schema:
+                type: string
+                format: binary
+              example: "[binary image data]"
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+              description: Gợi ý tên file khi tải về
+              example: 'inline; filename="report-week1.pdf"'
+            Cache-Control:
+              schema:
+                type: string
+              description: Tối ưu cache cho file tĩnh
+              example: "public, max-age=31536000"
+        '404':
+          $ref: '#/components/schemas/ErrorResponse'
+          description: File không tồn tại
+
+  # =====================================
+  # WEBHOOKS (Tương lai mở rộng)
+  # =====================================
+  /webhooks/stripe:
+    post:
+      tags: [Webhooks]
+      summary: Nhận sự kiện từ Stripe
+      description: Dùng để xử lý thanh toán, nâng cấp gói Premium
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                id: { type: string }
+                object: { type: string }
+                type: { type: string }
+      responses:
+        '200':
+          description: Webhook nhận thành công
+
+  # =====================================
+  # SYSTEM & MONITORING
+  # =====================================
+  /metrics:
+    get:
+      tags: [System]
+      summary: Prometheus Metrics
+      description: Dùng để giám sát hiệu suất server (CPU, Memory, Request count)
+      security: []
+      responses:
+        '200':
+          description: Text format metrics
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: |
+                # HELP http_requests_total Total number of HTTP requests
+                # TYPE http_requests_total counter
+                http_requests_total{method="GET",path="/api/health"} 150
+                http_requests_total{method="POST",path="/api/auth/login"} 42
+
+  /status:
+    get:
+      tags: [System]
+      summary: Trạng thái chi tiết hệ thống
+      description: Kiểm tra database, cache, external services
+      security: []
+      responses:
+        '200':
+          description: Hệ thống hoạt động bình thường
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  database:
+                    type: string
+                    enum: [healthy, error]
+                  redis:
+                    type: string
+                    enum: [healthy, error]
+                  uptime:
+                    type: number
+                    description: Thời gian chạy (giây)
+                  version:
+                    type: string
+                  environment:
+                    type: string
+                example:
+                  database: "healthy"
+                  redis: "healthy"
+                  uptime: 86400
+                  version: "1.0.0"
+                  environment: "production"
+  # =====================================
+  # ERROR EXAMPLE (Global) - DEMO
+  # =====================================
+  /api-error-example:
+    get:
+      tags: [System]
+      summary: Ví dụ lỗi API (demo)
+      description: |
+        Endpoint dùng để **demo các loại lỗi** trong Swagger UI.  
+        Không dùng trong production.
+      security: []
+      responses:
+        '400':
+          description: Bad Request - Dữ liệu đầu vào không hợp lệ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: "Invalid input: 'progress_percentage' must be between 0 and 100"
+                error: "ValidationError"
+                statusCode: 400
+        '401':
+          description: Unauthorized - Chưa đăng nhập
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: "Access token is missing or invalid"
+                error: "Unauthorized"
+                statusCode: 401
+        '403':
+          description: Forbidden - Không có quyền
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: "You do not have permission to perform this action"
+                error: "Forbidden"
+                statusCode: 403
+        '404':
+          description: Not Found - Không tìm thấy tài nguyên
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: "Task with id 999 not found"
+                error: "NotFound"
+                statusCode: 404
+        '429':
+          description: Too Many Requests - Vượt giới hạn
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: "Rate limit exceeded. Please try again later."
+                error: "TooManyRequests"
+                statusCode: 429
+        '500':
+          description: Internal Server Error - Lỗi hệ thống
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: "An unexpected error occurred"
+                error: "InternalServerError"
+                statusCode: 500
